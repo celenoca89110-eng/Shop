@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
-import { ShoppingBag, LayoutDashboard, LogOut } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, LogOut, Repeat } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -18,6 +18,10 @@ export default function Navbar() {
         <nav className="flex items-center gap-3">
           {user ? (
             <>
+              <Link href="/subscriptions" className="btn-secondary text-sm">
+                <Repeat className="mr-2 h-4 w-4" />
+                Abonnements
+              </Link>
               <Link href="/dashboard" className="btn-secondary text-sm">
                 <LayoutDashboard className="mr-2 h-4 w-4" />
                 Dashboard

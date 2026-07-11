@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
-import { ShieldCheck, Store, User, Plus, Package, Ticket, ClipboardList } from 'lucide-react';
+import { ShieldCheck, Store, User, Plus, Package, Ticket, ClipboardList, Calendar } from 'lucide-react';
 
 const ROLE_LABELS = {
   user: 'Utilisateur',
@@ -128,6 +128,9 @@ export default function DashboardPage() {
                   <Link href={`/dashboard/shop/${shop.id}/orders`} className="btn-secondary text-xs">
                     <ClipboardList className="mr-1.5 h-3.5 w-3.5" /> Commandes
                   </Link>
+                  <Link href={`/dashboard/shop/${shop.id}/calendar`} className="btn-secondary text-xs">
+                    <Calendar className="mr-1.5 h-3.5 w-3.5" /> Calendrier abonnements
+                  </Link>
                 </div>
               </div>
             ))}
@@ -137,7 +140,6 @@ export default function DashboardPage() {
         <div className="card mt-10">
           <h2 className="mb-3 text-lg font-semibold">Prochaines étapes</h2>
           <ul className="list-inside list-disc space-y-1 text-white/60">
-            <li>Phase 3 : abonnements et calendrier</li>
             <li>Phase 4 : intégration Discord (webhooks + rôles automatiques)</li>
             <li>Phase 5 : support, avis produits, dashboard statistiques</li>
           </ul>

@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const stripe = require('../config/stripe');
 const { validatePromoCode } = require('./promo.controller');
+const { computeSubscriptionEnd } = require('../utils/subscriptionDuration');
 
 /**
  * Crée une commande (pending) + une session Stripe Checkout.
@@ -90,17 +91,19 @@ async function checkout(req, res, next) {
     const order = orderResult.rows[0];
 
     const lineItemsForStripe = [];
+    const insertedItems = [];
 
     for (const item of items) {
       const product = productsById[item.productId];
       const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
       const unitPrice = product.is_free ? 0 : product.price_cents;
 
-      await client.query(
+      const itemResult = await client.query(
         `INSERT INTO order_items (order_id, product_id, product_name_snapshot, unit_price_cents, quantity, field_responses)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
         [order.id, product.id, product.name, unitPrice, qty, JSON.stringify(item.fieldResponses || {})]
       );
+      insertedItems.push(itemResult.rows[0]);
 
       if (unitPrice > 0) {
         lineItemsForStripe.push({
@@ -122,6 +125,13 @@ async function checkout(req, res, next) {
     if (totalCents === 0) {
       await client.query(`UPDATE orders SET status = 'paid' WHERE id = $1`, [order.id]);
       await decrementStock(client, items, productsById);
+      await createSubscriptionsForOrder(client, {
+        orderId: order.id,
+        userId: req.user.id,
+        shopId: shop.id,
+        itemRows: insertedItems,
+        productsById,
+      });
       await client.query('COMMIT');
       return res.status(201).json({ free: true, orderId: order.id });
     }
@@ -174,6 +184,32 @@ async function decrementStock(client, items, productsById) {
 }
 
 /**
+ * Crée les instances d'abonnement pour les articles "produit abonnement" d'une commande.
+ * itemRows : lignes issues de order_items (avec id, product_id, quantity, product_name_snapshot)
+ * productsById : map productId -> produit complet (avec config d'abonnement)
+ */
+async function createSubscriptionsForOrder(client, { orderId, userId, shopId, itemRows, productsById }) {
+  const now = new Date();
+  for (const item of itemRows) {
+    const product = item.product_id ? productsById[item.product_id] : null;
+    if (!product || !product.is_subscription) continue;
+
+    const endsAt = computeSubscriptionEnd(now, product);
+
+    await client.query(
+      `INSERT INTO subscriptions
+        (order_id, order_item_id, user_id, shop_id, product_id, product_name_snapshot,
+         status, auto_renew, starts_at, ends_at)
+       VALUES ($1,$2,$3,$4,$5,$6,'active',$7,$8,$9)`,
+      [
+        orderId, item.id, userId, shopId, product.id, item.product_name_snapshot,
+        !!product.subscription_auto_renew_default, now, endsAt,
+      ]
+    );
+  }
+}
+
+/**
  * Webhook Stripe : confirme le paiement et met à jour la commande.
  * IMPORTANT : cette route utilise express.raw() (voir app.js), pas express.json().
  */
@@ -191,6 +227,7 @@ async function stripeWebhook(req, res) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const orderId = session.metadata?.orderId;
+    const renewalOf = session.metadata?.renewalOf;
 
     if (orderId) {
       const client = await db.pool.connect();
@@ -211,6 +248,44 @@ async function stripeWebhook(req, res) {
                  WHERE id = $2 AND stock_type = 'limited'`,
                 [item.quantity, item.product_id]
               );
+            }
+          }
+
+          if (renewalOf) {
+            // --- Renouvellement d'un abonnement existant : on prolonge la date de fin ---
+            const subResult = await client.query('SELECT * FROM subscriptions WHERE id = $1', [renewalOf]);
+            if (subResult.rows.length > 0) {
+              const subscription = subResult.rows[0];
+              const productResult = await client.query('SELECT * FROM products WHERE id = $1', [subscription.product_id]);
+              if (productResult.rows.length > 0) {
+                const product = productResult.rows[0];
+                const base = subscription.status === 'expired' ? new Date() : new Date(subscription.ends_at);
+                const newEnd = require('../utils/subscriptionDuration').computeSubscriptionEnd(base, product);
+
+                await client.query(
+                  `UPDATE subscriptions SET status = 'active', ends_at = $1, renewed_count = renewed_count + 1 WHERE id = $2`,
+                  [newEnd, subscription.id]
+                );
+                await client.query(
+                  `INSERT INTO subscription_renewals (subscription_id, order_id, previous_end_at, new_end_at)
+                   VALUES ($1,$2,$3,$4)`,
+                  [subscription.id, orderId, subscription.ends_at, newEnd]
+                );
+              }
+            }
+          } else {
+            // --- Nouvelle commande : crée les abonnements pour les produits concernés ---
+            const productIds = itemsResult.rows.filter((i) => i.product_id).map((i) => i.product_id);
+            if (productIds.length > 0) {
+              const productsResult = await client.query('SELECT * FROM products WHERE id = ANY($1::uuid[])', [productIds]);
+              const productsById = Object.fromEntries(productsResult.rows.map((p) => [p.id, p]));
+              await createSubscriptionsForOrder(client, {
+                orderId,
+                userId: orderResult.rows[0].user_id,
+                shopId: orderResult.rows[0].shop_id,
+                itemRows: itemsResult.rows,
+                productsById,
+              });
             }
           }
           // TODO Phase 4 : envoyer une notification webhook Discord "Nouvelle commande"

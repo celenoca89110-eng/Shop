@@ -24,6 +24,8 @@ export default function ManageProductsPage() {
   const [form, setForm] = useState({
     name: '', description: '', priceCents: 0, isFree: false,
     stockType: 'unlimited', stockQuantity: 0, category: '', isFeatured: false,
+    isSubscription: false, subscriptionDurationType: 'monthly', subscriptionDurationDays: 30,
+    subscriptionAutoRenewDefault: false,
   });
   const [fields, setFields] = useState([]);
 
@@ -65,6 +67,8 @@ export default function ManageProductsPage() {
       setForm({
         name: '', description: '', priceCents: 0, isFree: false,
         stockType: 'unlimited', stockQuantity: 0, category: '', isFeatured: false,
+        isSubscription: false, subscriptionDurationType: 'monthly', subscriptionDurationDays: 30,
+        subscriptionAutoRenewDefault: false,
       });
       setFields([]);
       loadProducts();
@@ -160,6 +164,55 @@ export default function ManageProductsPage() {
               Mettre en avant
             </label>
 
+            <div className="rounded-xl border border-white/10 p-4">
+              <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-white/80">
+                <input
+                  type="checkbox"
+                  checked={form.isSubscription}
+                  onChange={(e) => updateForm('isSubscription', e.target.checked)}
+                />
+                Ce produit est un abonnement (ex : VIP 1 mois, Netflix 30 jours…)
+              </label>
+
+              {form.isSubscription && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1 block text-sm text-white/60">Durée</label>
+                    <select
+                      className="input-field"
+                      value={form.subscriptionDurationType}
+                      onChange={(e) => updateForm('subscriptionDurationType', e.target.value)}
+                    >
+                      <option value="weekly">Hebdomadaire (7 jours)</option>
+                      <option value="monthly">Mensuel (1 mois)</option>
+                      <option value="yearly">Annuel (1 an)</option>
+                      <option value="custom">Durée personnalisée</option>
+                    </select>
+                  </div>
+                  {form.subscriptionDurationType === 'custom' && (
+                    <div>
+                      <label className="mb-1 block text-sm text-white/60">Nombre de jours</label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="input-field"
+                        value={form.subscriptionDurationDays}
+                        onChange={(e) => updateForm('subscriptionDurationDays', e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <label className="col-span-2 flex items-center gap-2 text-sm text-white/60">
+                    <input
+                      type="checkbox"
+                      checked={form.subscriptionAutoRenewDefault}
+                      onChange={(e) => updateForm('subscriptionAutoRenewDefault', e.target.checked)}
+                    />
+                    Renouvellement automatique activé par défaut à l&apos;achat
+                  </label>
+                </div>
+              )}
+            </div>
+
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-white/70">Champs dynamiques</h3>
@@ -207,6 +260,7 @@ export default function ManageProductsPage() {
                   <p className="font-semibold">{p.name}</p>
                   <p className="text-sm text-white/50">
                     {p.is_free ? 'Gratuit' : formatPrice(p.price_cents)} · {p.is_active ? 'Actif' : 'Inactif'}
+                    {p.is_subscription && ' · Abonnement'}
                   </p>
                 </div>
                 <div className="flex gap-2">

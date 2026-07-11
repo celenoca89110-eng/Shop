@@ -1,8 +1,8 @@
-# CecaShop — Phase 1 + Phase 2
+# CecaShop — Phase 1 + Phase 2 + Phase 3
 
 Marketplace de produits numériques et gaming, thème violet/noir/blanc, dark mode.
-Ce livrable contient la **Phase 1** (socle) et la **Phase 2** (produits, commandes, Stripe)
-d'un projet en 5 phases (voir roadmap plus bas).
+Ce livrable contient la **Phase 1** (socle), la **Phase 2** (produits, commandes, Stripe)
+et la **Phase 3** (abonnements + calendrier) d'un projet en 5 phases (voir roadmap plus bas).
 
 ## Stack
 
@@ -45,6 +45,7 @@ cp .env.example .env
 npm install
 npm run db:migrate          # applique sql/schema.sql (Phase 1)
 npm run db:migrate:phase2   # applique sql/phase2_products_orders.sql (Phase 2)
+npm run db:migrate:phase3   # applique sql/phase3_subscriptions.sql (Phase 3)
 npm run seed:founder        # crée le compte Founder + boutique CecaShop
 npm run dev                  # démarre l'API sur http://localhost:4000
 ```
@@ -76,7 +77,7 @@ npm run dev               # démarre le site sur http://localhost:3000
    - Start command : `npm start`
    - Variables d'env : toutes celles de `.env.example` (avec vrais secrets Stripe en mode live/test)
    - Après le premier déploiement, lancez une fois via le Shell Render :
-     `npm run db:migrate && npm run db:migrate:phase2 && npm run seed:founder`
+     `npm run db:migrate && npm run db:migrate:phase2 && npm run db:migrate:phase3 && npm run seed:founder`
    - Dans le dashboard Stripe, créez un endpoint webhook pointant vers
      `https://<votre-backend>.onrender.com/api/stripe/webhook` (événement `checkout.session.completed`)
      et copiez le secret signé dans `STRIPE_WEBHOOK_SECRET`.
@@ -90,8 +91,8 @@ npm run dev               # démarre le site sur http://localhost:3000
 ## Roadmap complète
 
 - **Phase 1** — Socle : auth, rôles, multi-boutiques ✅
-- **Phase 2 (ce livrable)** — Produits, champs dynamiques, codes promo, commandes, Stripe ✅
-- **Phase 3** — Abonnements + calendrier (filtres, export CSV)
+- **Phase 2** — Produits, champs dynamiques, codes promo, commandes, Stripe ✅
+- **Phase 3 (ce livrable)** — Abonnements + calendrier (filtres, export CSV) ✅
 - **Phase 4** — Discord (webhooks, rôles automatiques), livraison de fichiers sécurisée
 - **Phase 5** — Tickets support, avis produits, dashboard vendeur avec statistiques, architecture crypto
 
@@ -103,33 +104,52 @@ cecashop/
 │   ├── src/
 │   │   ├── config/       # DB, Stripe, config Founder
 │   │   ├── middleware/   # auth, rôles, protection Founder
-│   │   ├── controllers/  # auth, boutiques, produits, promo, commandes
+│   │   ├── controllers/  # auth, boutiques, produits, promo, commandes, abonnements
 │   │   ├── routes/       # routes Express
-│   │   ├── utils/        # JWT, seed
+│   │   ├── cron/         # expiration automatique des abonnements
+│   │   ├── utils/        # JWT, seed, calcul de durée d'abonnement
 │   │   ├── app.js
 │   │   └── server.js
 │   ├── sql/
 │   │   ├── schema.sql                    # Phase 1
-│   │   └── phase2_products_orders.sql    # Phase 2
+│   │   ├── phase2_products_orders.sql    # Phase 2
+│   │   └── phase3_subscriptions.sql      # Phase 3
 │   └── .env.example
 └── frontend/
     ├── app/
     │   ├── shop/[slug]/                        # catalogue + fiche produit
     │   ├── checkout/success|cancel/             # retour Stripe
     │   ├── orders/                              # historique client
+    │   ├── subscriptions/                       # mes abonnements (client)
     │   └── dashboard/shop/[shopId]/
-    │       ├── products/       # gestion produits + champs dynamiques
+    │       ├── products/       # gestion produits + champs dynamiques + abonnement
     │       ├── promo-codes/    # gestion codes promo
-    │       └── orders/         # gestion commandes vendeur
+    │       ├── orders/         # gestion commandes vendeur
+    │       └── calendar/       # calendrier des abonnements (filtres + export CSV)
     ├── components/
     ├── context/           # AuthContext
     ├── lib/api.js         # client Axios + refresh auto
     └── .env.example
 ```
 
+## Contenu de la Phase 3
+
+- ✅ Produits configurables en abonnement (hebdomadaire, mensuel, annuel, durée personnalisée)
+- ✅ Suivi complet du cycle de vie : actif, expiré, annulé + historique des renouvellements
+- ✅ Renouvellement à la demande (paiement unique via Stripe, ou gratuit si le produit l'est)
+- ✅ Annulation : désactivation du renouvellement automatique OU résiliation immédiate
+- ✅ Tâche planifiée (cron horaire) qui expire automatiquement les abonnements et met à jour la commande liée
+- ✅ Calendrier vendeur avec filtres (statut, recherche), vue jour/semaine/mois, et export CSV
+- ✅ Page "Mes abonnements" côté client avec temps restant, renouvellement et résiliation
+
 ## Notes importantes Phase 2
 
-- Le paiement Stripe utilise **Checkout Sessions** en mode `payment` (paiement unique). La gestion des abonnements récurrents Stripe sera traitée en Phase 3 avec la logique métier d'abonnement.
+- Le paiement Stripe utilise **Checkout Sessions** en mode `payment` (paiement unique).
 - Les réductions des codes promo sont répercutées directement sur les montants envoyés à Stripe (Stripe Checkout ne gère pas nativement les remises en montant fixe arbitraire sans coupon pré-créé côté dashboard).
 - La notification Discord "Nouvelle commande" est prévue mais pas encore branchée (Phase 4) — un commentaire `TODO` marque l'endroit exact dans `order.controller.js`.
+
+## Notes importantes Phase 3
+
+- Le renouvellement est un **paiement à la demande**, pas un prélèvement automatique récurrent. Un vrai prélèvement automatique (auto-renew réel sans action du client) nécessiterait l'API Stripe Subscriptions/Billing avec enregistrement d'un moyen de paiement — actuellement hors-scope, mais l'architecture (colonne `auto_renew`) est prête pour cette évolution.
+- Le cron d'expiration tourne dans le même processus que l'API (`node-cron`). Sur Render, cela fonctionne tant qu'au moins une instance du service reste active ; pour une charge plus importante, prévoir un "Cron Job" Render séparé qui appelle un futur endpoint dédié.
 

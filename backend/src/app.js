@@ -11,6 +11,7 @@ const shopRoutes = require('./routes/shop.routes');
 const productRoutes = require('./routes/product.routes');
 const promoRoutes = require('./routes/promo.routes');
 const orderRoutes = require('./routes/order.routes');
+const subscriptionRoutes = require('./routes/subscription.routes');
 const orderController = require('./controllers/order.controller');
 
 const app = express();
@@ -55,6 +56,7 @@ app.use('/api/shops', shopRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/promo-codes', promoRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 // 404
 app.use((req, res) => {

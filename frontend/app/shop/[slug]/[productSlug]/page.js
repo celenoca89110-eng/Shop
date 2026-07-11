@@ -11,6 +11,13 @@ function formatPrice(cents) {
   return (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 
+const DURATION_LABELS = {
+  weekly: 'hebdomadaire',
+  monthly: 'mensuel',
+  yearly: 'annuel',
+  custom: 'personnalisé',
+};
+
 export default function ProductPage() {
   const { slug, productSlug } = useParams();
   const { user } = useAuth();
@@ -97,6 +104,11 @@ export default function ProductPage() {
 
           <p className="mb-6 text-3xl font-extrabold text-brand-violetLight">
             {product.is_free ? 'Gratuit' : formatPrice(product.price_cents)}
+            {product.is_subscription && (
+              <span className="ml-3 align-middle text-xs font-medium text-white/40">
+                Abonnement {DURATION_LABELS[product.subscription_duration_type]}
+              </span>
+            )}
           </p>
 
           {product.fields?.length > 0 && (
