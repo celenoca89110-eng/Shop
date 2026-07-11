@@ -15,7 +15,7 @@
   "db:migrate:phase3": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/phase3_subscriptions.sql','utf8')).then(()=>{console.log('Migration Phase 3 OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
 
   "migrate": "npm run db:migrate && npm run db:migrate:phase2 && npm run db:migrate:phase3"
-}
+},
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.6",
