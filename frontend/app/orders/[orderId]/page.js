@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '../../../components/Navbar';
 import { useAuth } from '../../../context/AuthContext';
 import api from '../../../lib/api';
+import { Download } from 'lucide-react';
 
 const STATUS_LABELS = {
   pending: 'En attente',
@@ -26,6 +27,7 @@ export default function OrderDetailPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [order, setOrder] = useState(null);
+  const [downloads, setDownloads] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -38,6 +40,11 @@ export default function OrderDetailPage() {
       .get(`/orders/me/${orderId}`)
       .then(({ data }) => setOrder(data.order))
       .catch(() => setError('Commande introuvable.'));
+
+    api
+      .get(`/orders/me/${orderId}/downloads`)
+      .then(({ data }) => setDownloads(data.downloads))
+      .catch(() => setDownloads([]));
   }, [user, orderId]);
 
   if (loading || !user) return null;
@@ -69,6 +76,40 @@ export default function OrderDetailPage() {
                 ))}
               </div>
             </div>
+
+            {downloads.length > 0 && (
+              <div className="card mb-6">
+                <h2 className="mb-4 font-semibold">Fichiers à télécharger</h2>
+                <div className="space-y-2">
+                  {downloads.map((d) => {
+                    const expired = new Date(d.expires_at) < new Date();
+                    const exhausted = d.download_count >= d.max_downloads;
+                    const disabled = expired || exhausted;
+                    return (
+                      <div key={d.token} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">{d.file_name}</p>
+                          <p className="text-xs text-white/40">
+                            {d.download_count}/{d.max_downloads} téléchargements ·{' '}
+                            {expired ? 'lien expiré' : `expire le ${new Date(d.expires_at).toLocaleDateString('fr-FR')}`}
+                          </p>
+                        </div>
+                        {disabled ? (
+                          <span className="text-xs text-white/30">Indisponible</span>
+                        ) : (
+                          <a
+                            href={`${process.env.NEXT_PUBLIC_API_URL}/files/download/${d.token}`}
+                            className="btn-secondary text-xs"
+                          >
+                            <Download className="mr-1.5 h-3.5 w-3.5" /> Télécharger
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="card space-y-2">
               <div className="flex justify-between text-white/60">

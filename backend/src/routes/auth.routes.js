@@ -21,5 +21,6 @@ router.post('/forgot-password', authLimiter, authController.forgotPassword);
 router.post('/reset-password', authLimiter, authController.resetPassword);
 router.get('/verify-email/:token', authController.verifyEmail);
 router.get('/me', requireAuth, authController.me);
+router.patch('/me', requireAuth, authController.updateProfile);
 
 module.exports = router;

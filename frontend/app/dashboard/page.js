@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
-import { ShieldCheck, Store, User, Plus, Package, Ticket, ClipboardList, Calendar } from 'lucide-react';
+import { ShieldCheck, Store, User, Plus, Package, Ticket, ClipboardList, Calendar, Settings, LifeBuoy, Star, BarChart3, Coins } from 'lucide-react';
 
 const ROLE_LABELS = {
   user: 'Utilisateur',
@@ -131,6 +131,21 @@ export default function DashboardPage() {
                   <Link href={`/dashboard/shop/${shop.id}/calendar`} className="btn-secondary text-xs">
                     <Calendar className="mr-1.5 h-3.5 w-3.5" /> Calendrier abonnements
                   </Link>
+                  <Link href={`/dashboard/shop/${shop.id}/settings`} className="btn-secondary text-xs">
+                    <Settings className="mr-1.5 h-3.5 w-3.5" /> Réglages
+                  </Link>
+                  <Link href={`/dashboard/shop/${shop.id}/tickets`} className="btn-secondary text-xs">
+                    <LifeBuoy className="mr-1.5 h-3.5 w-3.5" /> Support
+                  </Link>
+                  <Link href={`/dashboard/shop/${shop.id}/reviews`} className="btn-secondary text-xs">
+                    <Star className="mr-1.5 h-3.5 w-3.5" /> Avis
+                  </Link>
+                  <Link href={`/dashboard/shop/${shop.id}/stats`} className="btn-secondary text-xs">
+                    <BarChart3 className="mr-1.5 h-3.5 w-3.5" /> Statistiques
+                  </Link>
+                  <Link href={`/dashboard/shop/${shop.id}/crypto`} className="btn-secondary text-xs">
+                    <Coins className="mr-1.5 h-3.5 w-3.5" /> Crypto
+                  </Link>
                 </div>
               </div>
             ))}
@@ -138,11 +153,11 @@ export default function DashboardPage() {
         )}
 
         <div className="card mt-10">
-          <h2 className="mb-3 text-lg font-semibold">Prochaines étapes</h2>
-          <ul className="list-inside list-disc space-y-1 text-white/60">
-            <li>Phase 4 : intégration Discord (webhooks + rôles automatiques)</li>
-            <li>Phase 5 : support, avis produits, dashboard statistiques</li>
-          </ul>
+          <h2 className="mb-3 text-lg font-semibold">🎉 Projet complet</h2>
+          <p className="text-white/60">
+            Les 5 phases du projet CecaShop sont livrées : socle, produits &amp; paiements,
+            abonnements, Discord &amp; livraison de fichiers, support &amp; avis &amp; statistiques.
+          </p>
         </div>
       </main>
     </>

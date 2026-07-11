@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '../../../../components/Navbar';
 import api from '../../../../lib/api';
 import { useAuth } from '../../../../context/AuthContext';
-import { Tag, ShoppingCart } from 'lucide-react';
+import { Tag, ShoppingCart, Star } from 'lucide-react';
 
 function formatPrice(cents) {
   return (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -24,16 +24,30 @@ export default function ProductPage() {
   const router = useRouter();
 
   const [product, setProduct] = useState(null);
+  const [reviews, setReviews] = useState({ reviews: [], average: '0.0', total: 0 });
   const [fieldValues, setFieldValues] = useState({});
   const [promoCode, setPromoCode] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [cryptoCurrencies, setCryptoCurrencies] = useState([]);
+  const [paymentMethod, setPaymentMethod] = useState('stripe');
+  const [cryptoInstructions, setCryptoInstructions] = useState(null);
 
   useEffect(() => {
     api
       .get(`/products/shop/${slug}/${productSlug}`)
       .then(({ data }) => setProduct(data.product))
       .catch(() => setError('Produit introuvable.'));
+
+    api
+      .get(`/reviews/shop/${slug}/${productSlug}`)
+      .then(({ data }) => setReviews(data))
+      .catch(() => {});
+
+    api
+      .get(`/crypto/shop/${slug}`)
+      .then(({ data }) => setCryptoCurrencies(data.currencies))
+      .catch(() => setCryptoCurrencies([]));
   }, [slug, productSlug]);
 
   function updateField(fieldId, value) {
@@ -49,13 +63,18 @@ export default function ProductPage() {
     setError('');
     setSubmitting(true);
     try {
+      const isCrypto = paymentMethod !== 'stripe';
       const { data } = await api.post('/orders/checkout', {
         shopSlug: slug,
         items: [{ productId: product.id, quantity: 1, fieldResponses: fieldValues }],
         promoCode: promoCode || undefined,
+        paymentMethod: isCrypto ? 'crypto' : undefined,
+        cryptoCurrency: isCrypto ? paymentMethod : undefined,
       });
 
-      if (data.free) {
+      if (data.crypto) {
+        setCryptoInstructions(data);
+      } else if (data.free) {
         router.push(`/checkout/success?order=${data.orderId}`);
       } else {
         window.location.href = data.checkoutUrl;
@@ -157,6 +176,18 @@ export default function ProductPage() {
             </div>
           )}
 
+          {cryptoCurrencies.length > 0 && !product.is_free && (
+            <div className="mb-6">
+              <label className="mb-1 block text-sm text-white/60">Mode de paiement</label>
+              <select className="input-field" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                <option value="stripe">Carte bancaire (Stripe)</option>
+                {cryptoCurrencies.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="mb-6">
             <label className="mb-1 flex items-center gap-1.5 text-sm text-white/60">
               <Tag className="h-3.5 w-3.5" /> Code promo (optionnel)
@@ -171,10 +202,59 @@ export default function ProductPage() {
 
           {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
-          <button onClick={handleBuy} disabled={submitting} className="btn-primary w-full">
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            {submitting ? 'Traitement…' : product.is_free ? 'Obtenir gratuitement' : 'Acheter'}
-          </button>
+          {cryptoInstructions ? (
+            <div className="rounded-xl border border-brand-violet/30 bg-brand-violet/10 p-4 text-sm">
+              <p className="mb-2 font-semibold">Envoyez {(cryptoInstructions.amountCents / 100).toFixed(2)}€ en {cryptoInstructions.currency} à :</p>
+              <p className="mb-3 break-all rounded-lg bg-black/30 p-3 font-mono text-xs">{cryptoInstructions.address}</p>
+              <p className="text-white/50">
+                Votre commande sera confirmée par le vendeur dès réception du paiement. Vous pouvez suivre son statut dans{' '}
+                <a href="/orders" className="text-brand-violetLight hover:underline">vos commandes</a>.
+              </p>
+            </div>
+          ) : (
+            <button onClick={handleBuy} disabled={submitting} className="btn-primary w-full">
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              {submitting ? 'Traitement…' : product.is_free ? 'Obtenir gratuitement' : 'Acheter'}
+            </button>
+          )}
+        </div>
+
+        <div className="card mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold">Avis</h2>
+            {reviews.total > 0 && (
+              <span className="flex items-center gap-1 text-sm text-white/60">
+                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                {reviews.average} ({reviews.total})
+              </span>
+            )}
+          </div>
+
+          {reviews.reviews.length === 0 ? (
+            <p className="text-sm text-white/40">Aucun avis pour le moment.</p>
+          ) : (
+            <div className="space-y-4">
+              {reviews.reviews.map((r) => (
+                <div key={r.id} className="border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="font-medium">{r.username}</span>
+                    <span className="flex">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star key={i} className={`h-3.5 w-3.5 ${i < r.rating ? 'fill-yellow-400 text-yellow-400' : 'text-white/20'}`} />
+                      ))}
+                    </span>
+                  </div>
+                  {r.comment && <p className="text-sm text-white/60">{r.comment}</p>}
+                  {r.seller_reply && (
+                    <div className="mt-2 rounded-lg bg-white/5 p-3 text-sm">
+                      <p className="mb-1 text-xs font-medium text-brand-violetLight">Réponse du vendeur</p>
+                      <p className="text-white/60">{r.seller_reply}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </>

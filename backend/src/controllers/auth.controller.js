@@ -242,6 +242,40 @@ async function me(req, res) {
   return res.json({ user: req.user });
 }
 
+async function updateProfile(req, res, next) {
+  try {
+    const { discordId, username } = req.body;
+    const updates = [];
+    const values = [];
+    let idx = 1;
+
+    if (discordId !== undefined) {
+      updates.push(`discord_id = $${idx}`);
+      values.push(discordId || null);
+      idx += 1;
+    }
+    if (username) {
+      updates.push(`username = $${idx}`);
+      values.push(username);
+      idx += 1;
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Aucun champ valide à mettre à jour.' });
+    }
+
+    values.push(req.user.id);
+    const { rows } = await db.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, email, username, role, discord_id`,
+      values
+    );
+
+    return res.json({ user: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -251,4 +285,5 @@ module.exports = {
   resetPassword,
   verifyEmail,
   me,
+  updateProfile,
 };

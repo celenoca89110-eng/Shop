@@ -98,6 +98,7 @@ async function createProduct(req, res, next) {
       name, description, priceCents, isFree, stockType, stockQuantity,
       category, tags, isFeatured, mainImageUrl, gallery, fields,
       isSubscription, subscriptionDurationType, subscriptionDurationDays, subscriptionAutoRenewDefault,
+      discordRoleId,
     } = req.body;
 
     if (!name) {
@@ -117,8 +118,9 @@ async function createProduct(req, res, next) {
       `INSERT INTO products
         (shop_id, name, slug, description, price_cents, is_free, stock_type, stock_quantity,
          category, tags, is_featured, main_image_url, gallery,
-         is_subscription, subscription_duration_type, subscription_duration_days, subscription_auto_renew_default)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         is_subscription, subscription_duration_type, subscription_duration_days, subscription_auto_renew_default,
+         discord_role_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
         req.shop.id, name, slug, description || null,
@@ -135,6 +137,7 @@ async function createProduct(req, res, next) {
         isSubscription ? (subscriptionDurationType || 'monthly') : null,
         isSubscription && subscriptionDurationType === 'custom' ? parseInt(subscriptionDurationDays, 10) || 30 : null,
         !!subscriptionAutoRenewDefault,
+        discordRoleId || null,
       ]
     );
 
@@ -191,7 +194,7 @@ async function updateProduct(req, res, next) {
       'name', 'description', 'price_cents', 'is_free', 'stock_type', 'stock_quantity',
       'category', 'tags', 'is_featured', 'is_active', 'main_image_url', 'gallery',
       'is_subscription', 'subscription_duration_type', 'subscription_duration_days',
-      'subscription_auto_renew_default',
+      'subscription_auto_renew_default', 'discord_role_id',
     ];
     const updates = [];
     const values = [];

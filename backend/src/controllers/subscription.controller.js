@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const stripe = require('../config/stripe');
 const { computeSubscriptionEnd } = require('../utils/subscriptionDuration');
+const { revokeSubscriptionDiscordRole } = require('../services/postPurchase');
 
 // ==========================================================
 // Côté client
@@ -142,6 +143,7 @@ async function cancelSubscription(req, res, next) {
         `UPDATE subscriptions SET status = 'cancelled', auto_renew = false, ends_at = now() WHERE id = $1`,
         [subscriptionId]
       );
+      await revokeSubscriptionDiscordRole(db, subResult.rows[0]);
     } else {
       await db.query(`UPDATE subscriptions SET auto_renew = false WHERE id = $1`, [subscriptionId]);
     }

@@ -2,6 +2,9 @@ const db = require('../config/db');
 const stripe = require('../config/stripe');
 const { validatePromoCode } = require('./promo.controller');
 const { computeSubscriptionEnd } = require('../utils/subscriptionDuration');
+const { runPostPurchaseActions } = require('../services/postPurchase');
+const { sendDiscordWebhook, EVENTS } = require('../utils/discordWebhook');
+const { CURRENCIES } = require('./crypto.controller');
 
 /**
  * Crée une commande (pending) + une session Stripe Checkout.
@@ -11,7 +14,7 @@ const { computeSubscriptionEnd } = require('../utils/subscriptionDuration');
 async function checkout(req, res, next) {
   const client = await db.pool.connect();
   try {
-    const { shopSlug, items, promoCode } = req.body;
+    const { shopSlug, items, promoCode, paymentMethod, cryptoCurrency } = req.body;
 
     if (!shopSlug || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Boutique et articles requis.' });
@@ -132,8 +135,42 @@ async function checkout(req, res, next) {
         itemRows: insertedItems,
         productsById,
       });
+      await runPostPurchaseActions(client, {
+        order: { ...order, status: 'paid' },
+        shop,
+        user: req.user,
+        itemRows: insertedItems,
+      });
       await client.query('COMMIT');
       return res.status(201).json({ free: true, orderId: order.id });
+    }
+
+    // --- Paiement en cryptomonnaie : pas de Stripe, confirmation manuelle par le vendeur ---
+    if (paymentMethod === 'crypto') {
+      if (!CURRENCIES.includes(cryptoCurrency)) {
+        return res.status(400).json({ error: 'Devise crypto invalide.' });
+      }
+      const walletResult = await client.query(
+        'SELECT * FROM shop_crypto_wallets WHERE shop_id = $1 AND currency = $2',
+        [shop.id, cryptoCurrency]
+      );
+      if (walletResult.rows.length === 0) {
+        return res.status(400).json({ error: "Cette boutique n'accepte pas cette cryptomonnaie." });
+      }
+
+      await client.query(
+        `UPDATE orders SET payment_method = 'crypto', crypto_currency = $1, crypto_address = $2 WHERE id = $3`,
+        [cryptoCurrency, walletResult.rows[0].address, order.id]
+      );
+      await client.query('COMMIT');
+
+      return res.status(201).json({
+        crypto: true,
+        orderId: order.id,
+        currency: cryptoCurrency,
+        address: walletResult.rows[0].address,
+        amountCents: totalCents,
+      });
     }
 
     // --- Session Stripe Checkout ---
@@ -276,9 +313,10 @@ async function stripeWebhook(req, res) {
           } else {
             // --- Nouvelle commande : crée les abonnements pour les produits concernés ---
             const productIds = itemsResult.rows.filter((i) => i.product_id).map((i) => i.product_id);
+            let productsById = {};
             if (productIds.length > 0) {
               const productsResult = await client.query('SELECT * FROM products WHERE id = ANY($1::uuid[])', [productIds]);
-              const productsById = Object.fromEntries(productsResult.rows.map((p) => [p.id, p]));
+              productsById = Object.fromEntries(productsResult.rows.map((p) => [p.id, p]));
               await createSubscriptionsForOrder(client, {
                 orderId,
                 userId: orderResult.rows[0].user_id,
@@ -287,6 +325,15 @@ async function stripeWebhook(req, res) {
                 productsById,
               });
             }
+
+            const shopResult = await client.query('SELECT * FROM shops WHERE id = $1', [orderResult.rows[0].shop_id]);
+            const userResult = await client.query('SELECT * FROM users WHERE id = $1', [orderResult.rows[0].user_id]);
+            await runPostPurchaseActions(client, {
+              order: { ...orderResult.rows[0], status: 'paid' },
+              shop: shopResult.rows[0],
+              user: userResult.rows[0],
+              itemRows: itemsResult.rows,
+            });
           }
           // TODO Phase 4 : envoyer une notification webhook Discord "Nouvelle commande"
         }
@@ -370,8 +417,127 @@ async function updateOrderStatus(req, res, next) {
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Commande introuvable.' });
     }
-    return res.json({ order: rows[0] });
+
+    const order = rows[0];
+
+    if (req.shop.discord_webhook_url) {
+      if (status === 'completed') {
+        await sendDiscordWebhook(req.shop.discord_webhook_url, EVENTS.orderCompleted(order, req.shop.name));
+      } else if (status === 'cancelled') {
+        await sendDiscordWebhook(req.shop.discord_webhook_url, EVENTS.refund(order, req.shop.name));
+      }
+    }
+
+    return res.json({ order });
   } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Confirmation manuelle d'un paiement crypto par le vendeur (aucune vérification
+ * blockchain automatique n'est effectuée — architecture prête pour une future
+ * intégration avec un service de vérification comme BTCPay Server ou Coinbase Commerce).
+ */
+async function confirmCryptoPayment(req, res, next) {
+  const client = await db.pool.connect();
+  try {
+    const { orderId } = req.params;
+    const { txHash } = req.body;
+
+    const orderResult = await client.query(
+      `SELECT * FROM orders WHERE id = $1 AND shop_id = $2 AND payment_method = 'crypto'`,
+      [orderId, req.shop.id]
+    );
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Commande crypto introuvable.' });
+    }
+    const order = orderResult.rows[0];
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: 'Cette commande a déjà été traitée.' });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `UPDATE orders SET status = 'paid', crypto_tx_hash = $1, crypto_confirmed_at = now() WHERE id = $2`,
+      [txHash || null, orderId]
+    );
+
+    const itemsResult = await client.query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
+    for (const item of itemsResult.rows) {
+      if (item.product_id) {
+        await client.query(
+          `UPDATE products SET stock_quantity = GREATEST(0, stock_quantity - $1)
+           WHERE id = $2 AND stock_type = 'limited'`,
+          [item.quantity, item.product_id]
+        );
+      }
+    }
+
+    const productIds = itemsResult.rows.filter((i) => i.product_id).map((i) => i.product_id);
+    if (productIds.length > 0) {
+      const productsResult = await client.query('SELECT * FROM products WHERE id = ANY($1::uuid[])', [productIds]);
+      const productsById = Object.fromEntries(productsResult.rows.map((p) => [p.id, p]));
+      await createSubscriptionsForOrder(client, {
+        orderId,
+        userId: order.user_id,
+        shopId: order.shop_id,
+        itemRows: itemsResult.rows,
+        productsById,
+      });
+    }
+
+    const userResult = await client.query('SELECT * FROM users WHERE id = $1', [order.user_id]);
+    await runPostPurchaseActions(client, {
+      order: { ...order, status: 'paid' },
+      shop: req.shop,
+      user: userResult.rows[0],
+      itemRows: itemsResult.rows,
+    });
+
+    await client.query('COMMIT');
+
+    const updated = await db.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+    return res.json({ order: updated.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+}
+
+async function refundOrder(req, res, next) {
+  try {
+    const { orderId } = req.params;
+
+    const { rows } = await db.query('SELECT * FROM orders WHERE id = $1 AND shop_id = $2', [orderId, req.shop.id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Commande introuvable.' });
+    }
+    const order = rows[0];
+
+    if (!order.stripe_payment_intent) {
+      return res.status(400).json({ error: "Cette commande n'a pas de paiement Stripe associé (produit gratuit ?)." });
+    }
+
+    await stripe.refunds.create({ payment_intent: order.stripe_payment_intent });
+
+    const updated = await db.query(
+      `UPDATE orders SET status = 'cancelled' WHERE id = $1 RETURNING *`,
+      [orderId]
+    );
+
+    if (req.shop.discord_webhook_url) {
+      await sendDiscordWebhook(req.shop.discord_webhook_url, EVENTS.refund(updated.rows[0], req.shop.name));
+    }
+
+    return res.json({ order: updated.rows[0] });
+  } catch (err) {
+    if (err.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ error: `Remboursement impossible : ${err.message}` });
+    }
     next(err);
   }
 }
@@ -400,5 +566,7 @@ module.exports = {
   getMyOrderDetail,
   getShopOrders,
   updateOrderStatus,
+  confirmCryptoPayment,
+  refundOrder,
   archiveOrder,
 };

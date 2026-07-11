@@ -1,5 +1,7 @@
 const cron = require('node-cron');
 const db = require('../config/db');
+const { sendDiscordWebhook, EVENTS } = require('../utils/discordWebhook');
+const { revokeSubscriptionDiscordRole } = require('../services/postPurchase');
 
 /**
  * Toutes les heures : passe en 'expired' les abonnements actifs dont la date
@@ -7,8 +9,6 @@ const db = require('../config/db');
  *
  * NOTE : ceci ne déclenche pas de prélèvement automatique même si auto_renew
  * est activé — voir le commentaire dans subscription.controller.js.
- * En Phase 4, ce job sera aussi responsable de déclencher le retrait du rôle
- * Discord lié à l'abonnement expiré.
  */
 function startSubscriptionExpiryJob() {
   const task = async () => {
@@ -17,7 +17,7 @@ function startSubscriptionExpiryJob() {
         `UPDATE subscriptions
          SET status = 'expired'
          WHERE status = 'active' AND ends_at < now()
-         RETURNING id, order_id`
+         RETURNING *`
       );
 
       for (const sub of rows) {
@@ -26,6 +26,24 @@ function startSubscriptionExpiryJob() {
             `UPDATE orders SET status = 'subscription_expired' WHERE id = $1 AND status != 'cancelled'`,
             [sub.order_id]
           );
+        }
+
+        // Retrait automatique du rôle Discord lié à cet abonnement
+        await revokeSubscriptionDiscordRole(db, sub);
+
+        // Notification Discord "abonnement expiré"
+        try {
+          const shopResult = await db.query('SELECT * FROM shops WHERE id = $1', [sub.shop_id]);
+          const userResult = await db.query('SELECT discord_id FROM users WHERE id = $1', [sub.user_id]);
+          const shop = shopResult.rows[0];
+          if (shop?.discord_webhook_url) {
+            await sendDiscordWebhook(
+              shop.discord_webhook_url,
+              EVENTS.subscriptionExpired({ ...sub, discord_id: userResult.rows[0]?.discord_id }, shop.name)
+            );
+          }
+        } catch (err) {
+          console.error('[CecaShop] Erreur notification expiration:', err.message);
         }
       }
 

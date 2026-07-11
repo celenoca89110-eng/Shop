@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '../../../../../components/Navbar';
 import { useAuth } from '../../../../../context/AuthContext';
 import api from '../../../../../lib/api';
-import { Plus, Trash2, Package, X } from 'lucide-react';
+import { Plus, Trash2, Package, X, Paperclip, Upload } from 'lucide-react';
 
 const EMPTY_FIELD = { label: '', fieldType: 'text_short', isRequired: true, options: [] };
 
@@ -25,9 +25,12 @@ export default function ManageProductsPage() {
     name: '', description: '', priceCents: 0, isFree: false,
     stockType: 'unlimited', stockQuantity: 0, category: '', isFeatured: false,
     isSubscription: false, subscriptionDurationType: 'monthly', subscriptionDurationDays: 30,
-    subscriptionAutoRenewDefault: false,
+    subscriptionAutoRenewDefault: false, discordRoleId: '',
   });
   const [fields, setFields] = useState([]);
+  const [expandedFiles, setExpandedFiles] = useState(null);
+  const [filesByProduct, setFilesByProduct] = useState({});
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -68,7 +71,7 @@ export default function ManageProductsPage() {
         name: '', description: '', priceCents: 0, isFree: false,
         stockType: 'unlimited', stockQuantity: 0, category: '', isFeatured: false,
         isSubscription: false, subscriptionDurationType: 'monthly', subscriptionDurationDays: 30,
-        subscriptionAutoRenewDefault: false,
+        subscriptionAutoRenewDefault: false, discordRoleId: '',
       });
       setFields([]);
       loadProducts();
@@ -86,6 +89,44 @@ export default function ManageProductsPage() {
     if (!confirm(`Supprimer "${product.name}" ?`)) return;
     await api.delete(`/products/manage/${shopId}/${product.id}`);
     loadProducts();
+  }
+
+  async function loadFiles(productId) {
+    const { data } = await api.get(`/products/manage/${shopId}/${productId}/files`);
+    setFilesByProduct((f) => ({ ...f, [productId]: data.files }));
+  }
+
+  function toggleFilesPanel(productId) {
+    if (expandedFiles === productId) {
+      setExpandedFiles(null);
+    } else {
+      setExpandedFiles(productId);
+      if (!filesByProduct[productId]) loadFiles(productId);
+    }
+  }
+
+  async function handleFileUpload(productId, fileList) {
+    const file = fileList?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await api.post(`/products/manage/${shopId}/${productId}/files`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      loadFiles(productId);
+    } catch (err) {
+      alert(err.response?.data?.error || "Erreur lors de l'upload du fichier.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleFileDelete(productId, fileId) {
+    if (!confirm('Supprimer ce fichier ?')) return;
+    await api.delete(`/products/manage/${shopId}/${productId}/files/${fileId}`);
+    loadFiles(productId);
   }
 
   if (loading || !user) return null;
@@ -214,6 +255,20 @@ export default function ManageProductsPage() {
             </div>
 
             <div>
+              <label className="mb-1 block text-sm text-white/60">Rôle Discord à attribuer (optionnel)</label>
+              <input
+                className="input-field"
+                placeholder="ID du rôle Discord, ex: 987654321098765432"
+                value={form.discordRoleId}
+                onChange={(e) => updateForm('discordRoleId', e.target.value)}
+              />
+              <p className="mt-1 text-xs text-white/30">
+                Attribué automatiquement à l&apos;achat (retiré à l&apos;expiration pour un abonnement).
+                Nécessite que le client ait lié son Discord et que la boutique ait un Guild ID configuré (Réglages).
+              </p>
+            </div>
+
+            <div>
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-white/70">Champs dynamiques</h3>
                 <button type="button" onClick={addField} className="btn-secondary text-xs">
@@ -255,22 +310,60 @@ export default function ManageProductsPage() {
         ) : (
           <div className="space-y-3">
             {products.map((p) => (
-              <div key={p.id} className="card flex items-center justify-between">
-                <div>
-                  <p className="font-semibold">{p.name}</p>
-                  <p className="text-sm text-white/50">
-                    {p.is_free ? 'Gratuit' : formatPrice(p.price_cents)} · {p.is_active ? 'Actif' : 'Inactif'}
-                    {p.is_subscription && ' · Abonnement'}
-                  </p>
+              <div key={p.id} className="card">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold">{p.name}</p>
+                    <p className="text-sm text-white/50">
+                      {p.is_free ? 'Gratuit' : formatPrice(p.price_cents)} · {p.is_active ? 'Actif' : 'Inactif'}
+                      {p.is_subscription && ' · Abonnement'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => toggleFilesPanel(p.id)} className="btn-secondary text-xs">
+                      <Paperclip className="mr-1.5 h-3.5 w-3.5" /> Fichiers
+                    </button>
+                    <button onClick={() => toggleActive(p)} className="btn-secondary text-xs">
+                      {p.is_active ? 'Désactiver' : 'Activer'}
+                    </button>
+                    <button onClick={() => deleteProduct(p)} className="text-red-400">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => toggleActive(p)} className="btn-secondary text-xs">
-                    {p.is_active ? 'Désactiver' : 'Activer'}
-                  </button>
-                  <button onClick={() => deleteProduct(p)} className="text-red-400">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+
+                {expandedFiles === p.id && (
+                  <div className="mt-4 border-t border-white/10 pt-4">
+                    <label className="btn-secondary inline-flex cursor-pointer text-xs">
+                      <Upload className="mr-1.5 h-3.5 w-3.5" />
+                      {uploading ? 'Envoi…' : 'Ajouter un fichier'}
+                      <input
+                        type="file"
+                        className="hidden"
+                        disabled={uploading}
+                        onChange={(e) => handleFileUpload(p.id, e.target.files)}
+                      />
+                    </label>
+                    <p className="mt-1 text-xs text-white/30">
+                      ZIP, EXE, TXT, PDF, images, scripts FiveM… (100 Mo max). Livré automatiquement au client après achat.
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      {(filesByProduct[p.id] || []).length === 0 ? (
+                        <p className="text-xs text-white/30">Aucun fichier attaché.</p>
+                      ) : (
+                        filesByProduct[p.id].map((f) => (
+                          <div key={f.id} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-sm">
+                            <span className="truncate">{f.file_name}</span>
+                            <button onClick={() => handleFileDelete(p.id, f.id)} className="text-red-400">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '../../../../../components/Navbar';
 import { useAuth } from '../../../../../context/AuthContext';
 import api from '../../../../../lib/api';
-import { ClipboardList, Archive } from 'lucide-react';
+import { ClipboardList, Archive, Undo2, Coins } from 'lucide-react';
 
 const STATUS_OPTIONS = [
   'pending', 'paid', 'in_progress', 'completed', 'cancelled',
@@ -56,6 +56,26 @@ export default function ManageOrdersPage() {
     loadOrders();
   }
 
+  async function refundOrder(order) {
+    if (!confirm(`Rembourser la commande #${order.order_number} via Stripe ?`)) return;
+    try {
+      await api.post(`/orders/manage/${shopId}/${order.id}/refund`);
+      loadOrders();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur lors du remboursement.');
+    }
+  }
+
+  async function confirmCrypto(order) {
+    if (!confirm(`Confirmer la réception du paiement crypto pour la commande #${order.order_number} ?`)) return;
+    try {
+      await api.post(`/orders/manage/${shopId}/${order.id}/confirm-crypto`);
+      loadOrders();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur lors de la confirmation.');
+    }
+  }
+
   if (loading || !user) return null;
 
   return (
@@ -78,6 +98,11 @@ export default function ManageOrdersPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-semibold">{formatPrice(order.total_cents)}</span>
+                  {order.payment_method === 'crypto' && order.status === 'pending' && (
+                    <button onClick={() => confirmCrypto(order)} className="btn-secondary text-xs">
+                      <Coins className="mr-1.5 h-3.5 w-3.5" /> Confirmer paiement crypto
+                    </button>
+                  )}
                   <select
                     value={order.status}
                     onChange={(e) => updateStatus(order, e.target.value)}
@@ -90,6 +115,11 @@ export default function ManageOrdersPage() {
                   <button onClick={() => archiveOrder(order)} className="text-white/40 hover:text-white">
                     <Archive className="h-4 w-4" />
                   </button>
+                  {order.status !== 'cancelled' && (
+                    <button onClick={() => refundOrder(order)} className="text-red-400" title="Rembourser via Stripe">
+                      <Undo2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

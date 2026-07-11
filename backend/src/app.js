@@ -12,6 +12,11 @@ const productRoutes = require('./routes/product.routes');
 const promoRoutes = require('./routes/promo.routes');
 const orderRoutes = require('./routes/order.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
+const fileRoutes = require('./routes/file.routes');
+const ticketRoutes = require('./routes/ticket.routes');
+const reviewRoutes = require('./routes/review.routes');
+const statsRoutes = require('./routes/stats.routes');
+const cryptoRoutes = require('./routes/crypto.routes');
 const orderController = require('./controllers/order.controller');
 
 const app = express();
@@ -57,6 +62,11 @@ app.use('/api/products', productRoutes);
 app.use('/api/promo-codes', promoRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/tickets', ticketRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/crypto', cryptoRoutes);
 
 // 404
 app.use((req, res) => {

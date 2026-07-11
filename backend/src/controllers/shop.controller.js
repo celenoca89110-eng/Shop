@@ -100,7 +100,7 @@ async function updateShop(req, res, next) {
     const allowedFields = [
       'name', 'description', 'logo_url', 'banner_url',
       'color_primary', 'color_secondary', 'theme',
-      'discord_webhook_url', 'payment_settings', 'delivery_settings', 'is_active',
+      'discord_webhook_url', 'discord_guild_id', 'payment_settings', 'delivery_settings', 'is_active',
     ];
 
     const updates = [];
