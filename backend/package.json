@@ -3,14 +3,19 @@
   "version": "1.0.0",
   "description": "API backend CecaShop - Phase 1 (auth, rôles, multi-boutiques)",
   "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "seed:founder": "node src/utils/seedFounder.js",
-    "db:migrate": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/schema.sql','utf8')).then(()=>{console.log('Migration OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
-    "db:migrate:phase2": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/phase2_products_orders.sql','utf8')).then(()=>{console.log('Migration Phase 2 OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
-    "db:migrate:phase3": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/phase3_subscriptions.sql','utf8')).then(()=>{console.log('Migration Phase 3 OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\""
-  },
+"scripts": {
+  "start": "node src/server.js",
+  "dev": "nodemon src/server.js",
+  "seed:founder": "node src/utils/seedFounder.js",
+
+  "db:migrate": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/schema.sql','utf8')).then(()=>{console.log('Migration OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
+
+  "db:migrate:phase2": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/phase2_products_orders.sql','utf8')).then(()=>{console.log('Migration Phase 2 OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
+
+  "db:migrate:phase3": "node -e \"require('dotenv').config(); const fs=require('fs'); const {pool}=require('./src/config/db'); pool.query(fs.readFileSync('./sql/phase3_subscriptions.sql','utf8')).then(()=>{console.log('Migration Phase 3 OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
+
+  "migrate": "npm run db:migrate && npm run db:migrate:phase2 && npm run db:migrate:phase3"
+}
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.6",
