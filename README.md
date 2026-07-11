@@ -44,6 +44,8 @@ cd backend
 cp .env.example .env
 # Éditez .env : DATABASE_URL, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 npm install
+npm run migrate              # applique les 5 phases d'un coup (recommandé)
+# ou individuellement :
 npm run db:migrate          # applique sql/schema.sql (Phase 1)
 npm run db:migrate:phase2   # applique sql/phase2_products_orders.sql (Phase 2)
 npm run db:migrate:phase3   # applique sql/phase3_subscriptions.sql (Phase 3)
@@ -76,11 +78,13 @@ npm run dev               # démarre le site sur http://localhost:3000
 
 1. **PostgreSQL** : créez un service "PostgreSQL" sur Render, copiez l'URL interne dans `DATABASE_URL`.
 2. **Backend** : nouveau "Web Service" pointant sur `/backend`
-   - Build command : `npm install`
-   - Start command : `npm start`
+   - **Build command** : `npm install`
+   - **Start command** : `npm run migrate && npm start`
+     (ou déclenchez `npm run migrate` une fois via le Shell Render après le premier déploiement,
+     puis laissez `npm start` comme Start command — au choix selon votre préférence)
    - Variables d'env : toutes celles de `.env.example` (avec vrais secrets Stripe en mode live/test)
    - Après le premier déploiement, lancez une fois via le Shell Render :
-     `npm run db:migrate && npm run db:migrate:phase2 && npm run db:migrate:phase3 && npm run db:migrate:phase4 && npm run db:migrate:phase5 && npm run seed:founder`
+     `npm run migrate && npm run seed:founder`
    - Dans le dashboard Stripe, créez un endpoint webhook pointant vers
      `https://<votre-backend>.onrender.com/api/stripe/webhook` (événement `checkout.session.completed`)
      et copiez le secret signé dans `STRIPE_WEBHOOK_SECRET`.
@@ -200,4 +204,25 @@ cecashop/
 
 - **Crypto = architecture, pas de vérification blockchain automatique.** Comme précisé dans le cahier des charges ("prévoir architecture"), CecaShop ne surveille pas la blockchain : le vendeur doit vérifier manuellement la réception des fonds avant de cliquer sur "Confirmer paiement crypto". Pour une vérification automatique réelle, il faudrait intégrer un service tiers (BTCPay Server, Coinbase Commerce, ou une API d'explorateur de blockchain par devise) — l'architecture actuelle (adresse + montant + statut `pending`/`paid` par commande) permet de brancher ça sans tout refaire.
 - Les avis ne peuvent être laissés que sur un article dont la commande est passée par un statut payé (`paid`, `in_progress`, `completed`, ou statuts d'abonnement) — impossible de noter un produit jamais acheté.
+
+## Système de migration
+
+Toutes les migrations SQL passent désormais par un script Node unique : `backend/scripts/migrate.js`.
+
+- `npm run migrate` — applique les 5 phases dans l'ordre en une seule commande (c'est la commande à utiliser dans Render).
+- `npm run db:migrate` / `db:migrate:phase2` / `...phase3` / `...phase4` / `...phase5` — appliquent une seule phase (utile en local pour déboguer).
+- Chaque fichier SQL est idempotent (`CREATE TABLE IF NOT EXISTS`, colonnes ajoutées avec `IF NOT EXISTS`, enums protégés) : relancer `npm run migrate` plusieurs fois, y compris à chaque redeploy Render, ne casse rien et ne duplique rien.
+- `npm run db:reset -- --yes` — ⚠️ supprime **toutes** les tables et données CecaShop de la base connectée, pour repartir d'une base propre. Ne jamais lancer sans avoir vérifié qu'il s'agit bien de la bonne base.
+
+## Dépannage
+
+### `npm error Missing script: "migrate"`
+Corrigé : le script `migrate` existe maintenant dans `backend/package.json` et chaîne les 5 migrations. Si l'erreur persiste, vérifiez que la **Build/Start Command** sur Render pointe bien vers le dossier `backend` (Root Directory du service).
+
+### `foreign key constraint cannot be implemented — Key columns "owner_id" and "id" are of incompatible types: uuid and integer`
+Tout le schéma CecaShop utilise des UUID partout (`users.id`, `shops.id`, etc.), donc cette erreur ne vient pas d'une incohérence dans notre code. Elle apparaît quand la base PostgreSQL cible contient déjà une table `users` créée par un **autre projet ou un déploiement précédent**, avec un `id` de type `integer`/`serial` — et comme nos migrations utilisent `CREATE TABLE IF NOT EXISTS`, cette table existante n'est jamais recréée.
+
+Le script de migration détecte maintenant ce cas automatiquement et affiche un message clair au lieu de l'erreur Postgres brute. Deux solutions :
+1. **Utiliser une base PostgreSQL neuve** dédiée à CecaShop (recommandé sur Render : créez un nouveau service PostgreSQL plutôt que de réutiliser une base existante).
+2. **Repartir de zéro sur la base actuelle** si elle ne contient aucune donnée importante : `npm run db:reset -- --yes` puis `npm run migrate`.
 
