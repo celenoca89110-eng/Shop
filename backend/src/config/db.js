@@ -1,19 +1,20 @@
 const { Pool } = require('pg');
+require('dotenv').config();
 
-// Render fournit DATABASE_URL automatiquement quand on lie une base PostgreSQL.
-// En local, on utilise les variables séparées définies dans .env
 const pool = new Pool(
   process.env.DATABASE_URL
     ? {
         connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        ssl: {
+          rejectUnauthorized: false
+        }
       }
     : {
         host: process.env.DB_HOST || 'localhost',
         port: process.env.DB_PORT || 5432,
         user: process.env.DB_USER || 'postgres',
         password: process.env.DB_PASSWORD || 'postgres',
-        database: process.env.DB_NAME || 'cecashop',
+        database: process.env.DB_NAME || 'cecashop'
       }
 );
 
